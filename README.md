@@ -104,7 +104,6 @@ In lieu of the forthcoming documentation, here's an example:
                 // Deal with keyboard events.
                 window.addEventListener("keydown", function(e) {
                     keys[e.which] = true;
-                    console.log(e.which);
                 });
                 window.addEventListener("keyup", function(e) { 
                     delete keys[e.which];
