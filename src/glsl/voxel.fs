@@ -18,9 +18,8 @@ uniform sampler2D uSampler;
 
 
 vec4 sample3D(vec3 p) {
-    //XXX: Should we be adding 0.5 to the floored values?
-    float x = floor(p.x)/vWidth;
-    float y = (floor(p.y)*vDepth + floor(p.z)) / (vDepth * vHeight);
+    float x = (floor(p.x) + 0.5)/vWidth;
+    float y = (floor(p.y)*vDepth + floor(p.z) + 0.5) / (vDepth * vHeight);
     return texture2D(uSampler, vec2(x,y));
 }
 

@@ -38,9 +38,7 @@ Voxgrind.Renderer = function(canvas) {
         self.gl.bindTexture(self.gl.TEXTURE_2D, self.fxaaTexture);
         self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
         self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
-        (function foo() {
         self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA, w, h, 0, self.gl.RGBA, self.gl.UNSIGNED_BYTE, null);
-        })();
         self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, self.fxaaTexture, 0);
 
         // Set up the voxel rendering program.
