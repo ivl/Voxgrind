@@ -16,10 +16,12 @@ uniform float vHeight;
 uniform float vDepth;
 uniform sampler2D uSampler;
 
+float invWidth = 1.0/vWidth;
+float invHD = 1.0/(vDepth*vHeight);
 
 vec4 sample3D(in vec3 q) {
-    float x = floor(q.x) / vWidth;
-    float y = (floor(q.y)*vDepth + floor(q.z)) / (vDepth * vHeight);
+    float x = q.x * invWidth;
+    float y = (floor(q.y)*vDepth + q.z) * invHD;
     return texture2D(uSampler, vec2(x,y));
 }
 
