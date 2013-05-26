@@ -25,13 +25,14 @@
 
                 // Initialize the canvas.
                 var canvas = document.getElementById("glcanvas");
-                canvas.width = window.innerWidth;//640;
-                canvas.height = window.innerHeight;
+                canvas.width = window.innerWidth;
+                canvas.height = canvas.width * 9.0/16.0;
+                canvas.style.top = (window.innerHeight/2 - canvas.height/2) + "px";
 
                 // Initialize the Voxgrind renderer.
                 renderer = new Voxgrind.Renderer(canvas)
                 renderer.fogColor = {r: 0.75, g: 0.75, b: 1.0};
-                renderer.fov = 75;
+                renderer.fov = 90;
 
                 // Set up the camera.
                 renderer.cam.position.set(64, 64, -32);     // This is where the camera is located.
@@ -97,6 +98,7 @@
                 // Deal with keyboard events.
                 window.addEventListener("keydown", function(e) {
                     keys[e.which] = true;
+                    console.log(e.which);
                 });
                 window.addEventListener("keyup", function(e) { 
                     delete keys[e.which];
@@ -113,17 +115,23 @@
                 requestAnimationFrame(animate);
 
                 // Update the camera position.
-                if (keys[38]) {
+                if (keys[87]) {
                     camPos.z++;
                 }
-                if (keys[40]) {
+                if (keys[83]) {
                     camPos.z--;
                 }
-                if (keys[39]) {
+                if (keys[68]) {
                     camPos.x++;
                 }
-                if (keys[37]) {
+                if (keys[65]) {
                     camPos.x--;
+                }
+                if (keys[81]) {
+                    renderer.cam.position.y++;
+                }
+                if (keys[69]) {
+                    renderer.cam.position.y--;
                 }
 
                 // Completely clear the scene brownie.
@@ -150,10 +158,13 @@
                 text-align: center;
                 padding: 0;
                 margin: 0;
+                background: rgba(192,192,255,1);
             }
 
             canvas {
                 display: block;
+                position: fixed;
+                left: 0px;
             }
 
         </style>
@@ -164,6 +175,7 @@
     <body onload="initialize()">
 
         <canvas id="glcanvas"></canvas>
+
     </body>
 
 
