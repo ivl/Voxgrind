@@ -38,7 +38,7 @@
                 renderer.cam.target.set(64, 0, 64);         // This is the point the camera is looking at.
 
                 // Set up the light.
-                renderer.light.position.set(64, 64, -32);   // This is the position of the light.
+                renderer.light.position.set(64, 96, -32);   // This is the position of the light.
 
                 // Create the scene brownie. We'll blit our brownies into this 
                 // and then render it with the renderer.
@@ -76,8 +76,8 @@
                                 column.setVoxel(x, y, z, c, c, c);
                                 continue;
                             }
-                            var dx = x - columnSize / 2;
-                            var dz = z - columnSize / 2;
+                            var dx = x+0.5 - columnSize / 2;
+                            var dz = z+0.5 - columnSize / 2;
                             var d = Math.sqrt(dx*dx + dz*dz);
                             if (d >= columnSize/3) {
                                 continue;

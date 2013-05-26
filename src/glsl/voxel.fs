@@ -17,12 +17,21 @@ uniform float vDepth;
 uniform sampler2D uSampler;
 
 
-vec4 sample3D(vec3 p) {
-    float x = (floor(p.x) + 0.5)/vWidth;
-    float y = (floor(p.y)*vDepth + floor(p.z) + 0.5) / (vDepth * vHeight);
+vec4 sample3D(in vec3 q) {
+    float x = floor(q.x) / vWidth;
+    float y = (floor(q.y)*vDepth + floor(q.z)) / (vDepth * vHeight);
     return texture2D(uSampler, vec2(x,y));
 }
 
+bool rayBoxIntersect(in vec3 origin, in vec3 direction, in vec3 boxMin, in vec3 boxMax, out float t0, out float t1) {
+    vec3 omin = (boxMin - origin) / direction;
+    vec3 omax = (boxMax - origin) / direction;
+    vec3 imax = max(omax, omin);
+    vec3 imin = min(omax, omin);
+    t1 = min(imax.x, min(imax.y, imax.z));
+    t0 = max(max(imin.x, 0.0), max(imin.y, imin.z));
+    return t1 > t0;
+}
 
 void main(void) {
     vec3 front = normalize(lookat - cam);
@@ -41,114 +50,105 @@ void main(void) {
         return;
     }
 
-    float vpw = 2.0 * camnear * tan(radians(fov*0.5));                                  // viewport width
-    float vph = vpw * resolution.y/resolution.x;                                        // viewport height
-    lowp vec3 vp0 = (cam + (front * camnear)) - (0.5 * vpw * right) - (0.5 * vph * up); // lower left point of viewport
-    lowp vec3 p = vp0 + (fracRight * vpw * right) + (fracUp * vph * up);                // current position along ray
-    lowp vec3 c = floor(p) + vec3(0.5, 0.5, 0.5);                                       // center of current block
-    lowp vec3 lastBlock = c;
-    lowp vec3 r = normalize(p - cam);
+    float vpw = 2.0 * camnear * tan(radians(fov*0.5));                             // viewport width
+    float vph = vpw * resolution.y/resolution.x;                                   // viewport height
+    vec3 vp0 = (cam + (front * camnear)) - (0.5 * vpw * right) - (0.5 * vph * up); // lower left point of viewport
+    vec3 p0 = vp0 + (fracRight * vpw * right) + (fracUp * vph * up);               // the point on the vp corresponding to this pixel
+    vec3 v = floor(p0);
+    vec3 r = normalize(p0 - cam);
 
-    // Artifacts arise when a component of r is identically zero. Add an imperceptible 
-    // amount to r to prevent this. XXX: There has got to be a better way to deal with this.
-    if (r.x == 0.0) {
-        r.x = 0.000001;
-    }
-    if (r.y == 0.0) {
-        r.y = 0.000001;
-    }
-    if (r.z == 0.0) {
-        r.z = 0.000001;
-    }
-
+    // Prevent some artifacts.
     // XXX: Can we get away with the following? What if a component is -0.000001?
-    // r += 0.000001;
+    r += 0.000001;
 
-    // Keep the ray in the scene box.
-    if (p.x < 0.0 || p.x > vWidth || p.y < 0.0 || p.y > vHeight || p.z < 0.0 || p.z > vDepth) {
-        float tmin = -p.x/r.x;
-        float tmax = (vWidth - p.x) / r.x;
-        if (tmin > tmax) {
-            float temp = tmin;
-            tmin = tmax;
-            tmax = temp;
-        }
-        float tymin = -p.y/r.y;
-        float tymax = (vHeight - p.y)/r.y;
-        if (tymin > tymax) {
-            float temp = tymin;
-            tymin = tymax;
-            tymax = temp;
-        }
-        if (tmin > tymax || tymin > tmax) {
+    // Initialize the marching inside the bounds.
+    vec3 p1 = p0;
+    if (p0.x < 0.0 || p0.x > vWidth - 1.0 || p0.y < 0.0 || p0.y > vHeight - 1.0 || p0.z < 0.0 || p0.z > vDepth - 1.0) {
+        float t0, t1;
+        if (!rayBoxIntersect(p0, r, vec3(0,0,0), vec3(vWidth, vHeight, vDepth), t0, t1)) {
             gl_FragColor = fogColor;
             return;
         }
-        tmin = max(tymin, tmin);
-        tmax = min(tymax, tmax);
-        float tzmin = -p.z/r.z;
-        float tzmax = (vDepth - p.z)/r.z;
-        if (tzmin > tzmax) {
-            float temp = tzmin;
-            tzmin = tzmax;
-            tzmax = temp;
-        }
-        if (tmin > tzmax || tzmin > tmax) {
-            gl_FragColor = fogColor;
-            return;
-        }
-        tmin = max(tmin, tzmin);
-        if (tmin < 0.0) {
-            gl_FragColor = fogColor;
-            return;
-        }
-        p = p + r*tmin + r*0.001;
-        if (tmin == tymin) {
-            c = floor(vec3(p.x, p.y + 0.1 * sign(r.y), p.z)) + vec3(0.5, 0.5, 0.5);
-            lastBlock = floor(vec3(p.x, p.y + 0.1 * -sign(r.y), p.z)) + vec3(0.5, 0.5, 0.5);
-        }
-        else if (tmin == tzmin) {
-            c = floor(vec3(p.x, p.y, p.z + 0.1 * sign(r.z))) + vec3(0.5, 0.5, 0.5);
-            lastBlock = floor(vec3(p.x, p.y, p.z + 0.1 * -sign(r.z))) + vec3(0.5, 0.5, 0.5);
-        }
-        else {
-            c = floor(vec3(p.x + 0.1 * sign(r.x), p.y, p.z)) + vec3(0.5, 0.5, 0.5);
-            lastBlock = floor(vec3(p.x + 0.1 * -sign(r.x), p.y, p.z)) + vec3(0.5, 0.5, 0.5);
-        }
+        p1 = p0 + r * t0 + r * 0.0001;
+        v = floor(p1);
     }
 
-    vec3 n = sign(r) * 0.5;
-    vec3 invr = 1.0/r;
+    
+    vec3 step = sign(r);
+    vec3 tMax = (((0.5+v) + 0.5*step) - p1)/r;
+    vec3 tDelta = step/r;
 
-    // March!
-    for (int step = 0; step < 2048; step++) {
-        if (c.x > vWidth || c.x < 0.0 || c.y > vHeight || c.y < 0.0 || c.z > vDepth || c.z < 0.0) {
-            gl_FragColor = fogColor;
-            return;
-        }
-        vec4 col = sample3D(c);
+
+    for (int iter = 0; iter < 2048; iter++) {
+        vec4 col = sample3D(v);
         if (col.w == 1.0) {
-            float mag = max(0.0, dot(lastBlock - c, normalize(light - p))); // point lighting
-            float fog = min(1.0, length(p - cam) / fogDistance); // fog
+            float t0, t1;
+            if (!rayBoxIntersect(p0, r, v, v + vec3(1.0,1.0,1.0), t0, t1)) {
+                gl_FragColor = fogColor;
+                return;
+            }
+            vec3 pi = p0 + r * t0;
+            vec3 d = pi - (v + vec3(0.5, 0.5, 0.5));
+            vec3 absd = abs(d);
+            vec3 normal;
+            if (absd.y > absd.x && absd.y > absd.z) {
+                normal = vec3(0, sign(d.y), 0);
+            }
+            else if (absd.x > absd.z) {
+                normal = vec3(sign(d.x), 0, 0);
+            }
+            else {
+                normal = vec3(0, 0, sign(d.z));
+            }
+
+            float mag = max(0.0, dot(normal, normalize(light - pi))); // point lighting
+            float fog = min(1.0, length(pi - cam) / fogDistance); // fog
             gl_FragColor = vec4(col.r*mag * (1.0 - fog) + fog*fogColor.r, 
                                 col.g*mag * (1.0 - fog) + fog*fogColor.g, 
                                 col.b*mag * (1.0 - fog) + fog*fogColor.b, 1.0);
             return;
         }
-        lastBlock = c;
-        vec3 d = (c + n) - p;
-        vec3 T = d * invr;
-        float t = min(T.x, T.y); t = min(t, T.z);
-        p += r * t;
-        if (t == T.x) {
-            c.x += n.x * 2.0;
-        }
-        else if (t == T.y) {
-            c.y += n.y * 2.0;
+
+        if (tMax.x < tMax.y) {
+            if (tMax.x < tMax.z) {
+                v.x += step.x;
+                if (v.x >= vWidth || v.x < 0.0) {
+                    gl_FragColor = fogColor;
+                    return;
+                }
+                tMax.x += tDelta.x;
+            }
+            else {
+                v.z += step.z;
+                if (v.z >= vDepth || v.z < 0.0) {
+                    gl_FragColor = fogColor;
+                    return;
+                }
+                tMax.z += tDelta.z;
+            }
         }
         else {
-            c.z += n.z * 2.0;
+            if (tMax.y < tMax.z) {
+                v.y += step.y;
+                if (v.y >= vHeight || v.y < 0.0) {
+                    gl_FragColor = fogColor;
+                    return;
+                }
+                tMax.y += tDelta.y;
+            }
+            else {
+                v.z += step.z;
+                if (v.z >= vDepth || v.z < 0.0) {
+                    gl_FragColor = fogColor;
+                    return;
+                }
+                tMax.z += tDelta.z;
+            }
         }
-        c = floor(c) + vec3(0.5, 0.5, 0.5);
     }
+    gl_FragColor = fogColor;            
 }
+
+
+
+
