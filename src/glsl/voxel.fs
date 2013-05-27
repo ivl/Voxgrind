@@ -11,13 +11,15 @@ uniform vec3 lightColor;
 uniform vec3 lightDistance;
 uniform float fov;
 uniform float camnear;
+uniform float bWidth;
+uniform float bHeight;
 uniform float vWidth;
 uniform float vHeight;
 uniform float vDepth;
 uniform sampler2D uSampler;
 
-float invWidth = 1.0/vWidth;
-float invHD = 1.0/(vDepth*vHeight);
+float invWidth = 1.0/bWidth;
+float invHD = 1.0/bHeight;
 
 vec4 sample3D(in vec3 q) {
     float x = q.x * invWidth;
@@ -60,7 +62,6 @@ void main(void) {
     vec3 r = normalize(p0 - cam);
 
     // Prevent some artifacts.
-    // XXX: Can we get away with the following? What if a component is -0.000001?
     r += 0.000001;
 
     // Initialize the marching inside the bounds.
@@ -111,27 +112,22 @@ void main(void) {
                 orthoJ = vec3(0,1,0);
             }
 
+            // Ambient occlusion
             vec3 normalBlock = v + 0.5 + normal;
             float ao = 0.0;
-            if (normalBlock.x >= 0.0 && normalBlock.x < vWidth  - 1.0 &&
-                normalBlock.y >= 0.0 && normalBlock.y < vHeight - 1.0 &&
-                normalBlock.z >= 0.0 && normalBlock.z < vDepth  - 1.0) {
-                    vec3 fracpi = fract(pi);
-                    float fpoj = dot(fracpi, orthoJ);
-                    float omfpoj = 1.0 - fpoj;
-                    float fpoi = dot(fracpi, orthoI);
-                    float omfpoi = 1.0 - fpoi;
-                    // Need to add checks here to make sure nB+oJ etc fall within the
-                    // bounds of the if above.
-                    ao = max(ao, sample3D(normalBlock + orthoJ).w * fpoj);
-                    ao = max(ao, sample3D(normalBlock - orthoJ).w * omfpoj);
-                    ao = max(ao, sample3D(normalBlock + orthoI).w * fpoi);
-                    ao = max(ao, sample3D(normalBlock - orthoI).w * omfpoi);
-                    ao = max(ao, sample3D(normalBlock + orthoJ + orthoI).w * min(fpoj, fpoi));
-                    ao = max(ao, sample3D(normalBlock + orthoJ - orthoI).w * min(fpoj, omfpoi));
-                    ao = max(ao, sample3D(normalBlock - orthoJ + orthoI).w * min(omfpoj, fpoi));
-                    ao = max(ao, sample3D(normalBlock - orthoJ - orthoI).w * min(omfpoj, omfpoi));
-            }
+            vec3 fracpi = fract(pi);
+            float fpoj = dot(fracpi, orthoJ);
+            float omfpoj = 1.0 - fpoj;
+            float fpoi = dot(fracpi, orthoI);
+            float omfpoi = 1.0 - fpoi;
+            ao = max(ao, sample3D(normalBlock + orthoJ).w * fpoj);
+            ao = max(ao, sample3D(normalBlock - orthoJ).w * omfpoj);
+            ao = max(ao, sample3D(normalBlock + orthoI).w * fpoi);
+            ao = max(ao, sample3D(normalBlock - orthoI).w * omfpoi);
+            ao = max(ao, sample3D(normalBlock + orthoJ + orthoI).w * min(fpoj, fpoi));
+            ao = max(ao, sample3D(normalBlock + orthoJ - orthoI).w * min(fpoj, omfpoi));
+            ao = max(ao, sample3D(normalBlock - orthoJ + orthoI).w * min(omfpoj, fpoi));
+            ao = max(ao, sample3D(normalBlock - orthoJ - orthoI).w * min(omfpoj, omfpoi));
             ao = max(0.0, min(1.0, ao * 0.5));
 
             float mag = (1.0-ao) * min(1.0, max(0.0, dot(normal, normalize(light - pi)))); // point lighting

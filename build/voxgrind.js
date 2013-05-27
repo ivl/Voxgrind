@@ -116,12 +116,12 @@ Voxgrind.Renderer = function(canvas) {
 
     self.canvas = canvas;
 
-    self.initialize = function(canvas) {
+    self.initialize = function() {
 
         self.near        = 0.01;
         self.fov         = 90.0;
         self.fogColor    = {r: 0.0, g: 0.0, b: 0.0};
-        self.fogDistance = 1e32; // essentially, no fog.
+        self.fogDistance = 1e32;
 
         self.cam         = new Voxgrind.Camera();
         self.light       = new Voxgrind.Light();
@@ -129,6 +129,10 @@ Voxgrind.Renderer = function(canvas) {
         // Create the WebGL context.
         self.gl = self.canvas.getContext("webgl") || self.canvas.getContext("experimental-webgl");
         self.gl.viewport(0, 0, self.canvas.width, self.canvas.height);
+
+        // Create the backend canvas for transforming to power-of-two.
+        self.backend = document.createElement("canvas");
+        self.backendContext = self.backend.getContext("2d");
 
         // Set up the fxaa program.
         self.fxaaProgram = self.buildShader("quad.vs", "fxaa.fs");
@@ -155,6 +159,8 @@ Voxgrind.Renderer = function(canvas) {
         self.uLookat = self.gl.getUniformLocation(self.voxelProgram, "lookat");
         self.uCamnear = self.gl.getUniformLocation(self.voxelProgram, "camnear");
         self.uFOV = self.gl.getUniformLocation(self.voxelProgram, "fov");
+        self.bWidth = self.gl.getUniformLocation(self.voxelProgram, "bWidth");
+        self.bHeight = self.gl.getUniformLocation(self.voxelProgram, "bHeight");
         self.uWidth = self.gl.getUniformLocation(self.voxelProgram, "vWidth");
         self.uHeight = self.gl.getUniformLocation(self.voxelProgram, "vHeight");
         self.uDepth = self.gl.getUniformLocation(self.voxelProgram, "vDepth");
@@ -184,8 +190,18 @@ Voxgrind.Renderer = function(canvas) {
 
 
     self.render = function(brownie) {
-        // Render the brownie to voxelFBO.
+        // Size the backend and copy the brownie.
+        var w = 1, h = 1;
+        while (w < brownie.canvas.width) {w *= 2}
+        while (h < brownie.canvas.height) {h *= 2}
+        self.backend.width = w;
+        self.backend.height = h;
+        self.backendContext.drawImage(brownie.canvas, 0, 0);
+
+        // Render the brownie to fxaaFBO.
         self.gl.useProgram(self.voxelProgram);
+        self.gl.uniform1f(self.bWidth, self.backend.width);
+        self.gl.uniform1f(self.bHeight, self.backend.height);
         self.gl.uniform1f(self.uWidth, brownie.width);
         self.gl.uniform1f(self.uHeight, brownie.height);
         self.gl.uniform1f(self.uDepth, brownie.depth);
@@ -202,7 +218,7 @@ Voxgrind.Renderer = function(canvas) {
         self.gl.uniform3fv(self.uLight, self.light.position.toArray());
         self.gl.bindTexture(self.gl.TEXTURE_2D, self.voxelTexture);
         self.gl.uniform1i(self.gl.getUniformLocation(self.voxelProgram, "uSampler"), 0);
-        self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA, self.gl.RGBA, self.gl.UNSIGNED_BYTE, brownie.canvas);
+        self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA, self.gl.RGBA, self.gl.UNSIGNED_BYTE, self.backend);
         self.gl.drawArrays(self.gl.TRIANGLE_STRIP, 0, 4);
 
         // Apply FXAA
@@ -240,7 +256,6 @@ Voxgrind.Renderer = function(canvas) {
         }
         return program;
     }
-
 
     self.initialize();
 
@@ -337,13 +352,15 @@ Voxgrind.shaders['voxel.fs'] = [
     "uniform vec3 lightDistance;",
     "uniform float fov;",
     "uniform float camnear;",
+    "uniform float bWidth;",
+    "uniform float bHeight;",
     "uniform float vWidth;",
     "uniform float vHeight;",
     "uniform float vDepth;",
     "uniform sampler2D uSampler;",
     "",
-    "float invWidth = 1.0/vWidth;",
-    "float invHD = 1.0/(vDepth*vHeight);",
+    "float invWidth = 1.0/bWidth;",
+    "float invHD = 1.0/bHeight;",
     "",
     "vec4 sample3D(in vec3 q) {",
     "    float x = q.x * invWidth;",
@@ -386,7 +403,6 @@ Voxgrind.shaders['voxel.fs'] = [
     "    vec3 r = normalize(p0 - cam);",
     "",
     "    // Prevent some artifacts.",
-    "    // XXX: Can we get away with the following? What if a component is -0.000001?",
     "    r += 0.000001;",
     "",
     "    // Initialize the marching inside the bounds.",
@@ -437,27 +453,22 @@ Voxgrind.shaders['voxel.fs'] = [
     "                orthoJ = vec3(0,1,0);",
     "            }",
     "",
+    "            // Ambient occlusion",
     "            vec3 normalBlock = v + 0.5 + normal;",
     "            float ao = 0.0;",
-    "            if (normalBlock.x >= 0.0 && normalBlock.x < vWidth  - 1.0 &&",
-    "                normalBlock.y >= 0.0 && normalBlock.y < vHeight - 1.0 &&",
-    "                normalBlock.z >= 0.0 && normalBlock.z < vDepth  - 1.0) {",
-    "                    vec3 fracpi = fract(pi);",
-    "                    float fpoj = dot(fracpi, orthoJ);",
-    "                    float omfpoj = 1.0 - fpoj;",
-    "                    float fpoi = dot(fracpi, orthoI);",
-    "                    float omfpoi = 1.0 - fpoi;",
-    "                    // Need to add checks here to make sure nB+oJ etc fall within the",
-    "                    // bounds of the if above.",
-    "                    ao = max(ao, sample3D(normalBlock + orthoJ).w * fpoj);",
-    "                    ao = max(ao, sample3D(normalBlock - orthoJ).w * omfpoj);",
-    "                    ao = max(ao, sample3D(normalBlock + orthoI).w * fpoi);",
-    "                    ao = max(ao, sample3D(normalBlock - orthoI).w * omfpoi);",
-    "                    ao = max(ao, sample3D(normalBlock + orthoJ + orthoI).w * min(fpoj, fpoi));",
-    "                    ao = max(ao, sample3D(normalBlock + orthoJ - orthoI).w * min(fpoj, omfpoi));",
-    "                    ao = max(ao, sample3D(normalBlock - orthoJ + orthoI).w * min(omfpoj, fpoi));",
-    "                    ao = max(ao, sample3D(normalBlock - orthoJ - orthoI).w * min(omfpoj, omfpoi));",
-    "            }",
+    "            vec3 fracpi = fract(pi);",
+    "            float fpoj = dot(fracpi, orthoJ);",
+    "            float omfpoj = 1.0 - fpoj;",
+    "            float fpoi = dot(fracpi, orthoI);",
+    "            float omfpoi = 1.0 - fpoi;",
+    "            ao = max(ao, sample3D(normalBlock + orthoJ).w * fpoj);",
+    "            ao = max(ao, sample3D(normalBlock - orthoJ).w * omfpoj);",
+    "            ao = max(ao, sample3D(normalBlock + orthoI).w * fpoi);",
+    "            ao = max(ao, sample3D(normalBlock - orthoI).w * omfpoi);",
+    "            ao = max(ao, sample3D(normalBlock + orthoJ + orthoI).w * min(fpoj, fpoi));",
+    "            ao = max(ao, sample3D(normalBlock + orthoJ - orthoI).w * min(fpoj, omfpoi));",
+    "            ao = max(ao, sample3D(normalBlock - orthoJ + orthoI).w * min(omfpoj, fpoi));",
+    "            ao = max(ao, sample3D(normalBlock - orthoJ - orthoI).w * min(omfpoj, omfpoi));",
     "            ao = max(0.0, min(1.0, ao * 0.5));",
     "",
     "            float mag = (1.0-ao) * min(1.0, max(0.0, dot(normal, normalize(light - pi)))); // point lighting",
